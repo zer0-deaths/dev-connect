@@ -1,0 +1,42 @@
+{
+  "id": "adb-pair",
+  "name": "Dev Connect",
+  "version": "1.2.0",
+  "summary": "Pair Android over Wi-Fi, and iPhone over USB Trust",
+  "description": "Pair Android from Droppy's shelf with a QR or a 6-digit wireless debugging code. iPhone has no QR pair: plug in USB, tap Pair, then Trust on the phone. Uses adb and Xcode devicectl.",
+  "category": "Productivity",
+  "kit": {
+    "abi": 1,
+    "minAPI": "1.6.0"
+  },
+  "minAppVersion": "15.3.0",
+  "capabilities": [
+    "hud",
+    "shelf-write"
+  ],
+  "surfaces": [
+    "shelf-widget",
+    "settings-pane",
+    "hud"
+  ],
+  "icon": "AdbPair.icon",
+  "creator": {
+    "name": "zer0-deaths",
+    "kind": "community",
+    "url": "https://github.com/zer0-deaths",
+    "avatar": "Creator.png"
+  },
+  "source": {
+    "repository": "https://github.com/zer0-deaths/dev-connect",
+    "license": "MIT"
+  },
+  "keywords": [
+    "adb",
+    "android",
+    "ios",
+    "iphone",
+    "wireless",
+    "pair",
+    "qr"
+  ]
+}

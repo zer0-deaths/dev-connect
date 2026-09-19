@@ -1,0 +1,6 @@
+.build/
+.DS_Store
+shots/
+*.swp
+.mcp.json
+.cursor/mcp.json
