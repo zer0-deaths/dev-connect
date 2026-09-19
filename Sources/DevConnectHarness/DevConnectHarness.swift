@@ -1,5 +1,5 @@
 //
-//  AdbPairHarness.swift
+//  DevConnectHarness.swift
 //
 //  Run with: droppykit run
 //
@@ -9,9 +9,9 @@
 
 import DroppyKit
 import DroppyKitHarness
-import AdbPair
+import DevConnect
 
 @main
-struct AdbPairHarness: DropletHarnessApp {
+struct DevConnectHarness: DropletHarnessApp {
     static func makeDroplet() -> any Droplet { AdbPairDroplet() }
 }

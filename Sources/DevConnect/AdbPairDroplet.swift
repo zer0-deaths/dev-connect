@@ -2,8 +2,8 @@ import Combine
 import DroppyKit
 import SwiftUI
 
-@objc(AdbPairPrincipal)
-public final class AdbPairPrincipal: NSObject, DropletPrincipal {
+@objc(DevConnectPrincipal)
+public final class DevConnectPrincipal: NSObject, DropletPrincipal {
     public override init() { super.init() }
 
     @MainActor public func makeDroplet() -> AnyObject { AdbPairDroplet() }

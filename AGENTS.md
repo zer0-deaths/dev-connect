@@ -8,7 +8,7 @@ Droppy loads the built `.droplet` bundle into its own process and draws it on
 the notch, the shelf, the lock screen and the menu bar.
 
 - Droplet id: `dev-connect`. It is also `AdbPairDroplet.id` in Swift and `id` in `droplet.json`; the three must agree or the loader refuses the bundle.
-- Swift product: `AdbPair`, a dynamic library. The harness target is `AdbPairHarness`.
+- Swift product: `DevConnect`, a dynamic library. The harness target is `DevConnectHarness`.
 - SDK checkout: `/Users/midnight/Developer/droppykit` (DroppyKit 1.8.1). Docs online: https://getdroppy.app/docs/droppykit
 - Host: Droppy 15.3 or later, which runs an unsigned bundle once its user approves that build under Settings, Store, Local droplets and asks again each time it opens, or the free Droppy Playground (https://getdroppy.app/download/playground), which loads unsigned bundles without asking.
 
@@ -18,7 +18,7 @@ Wireless ADB pairing from the shelf. QR and 6-digit code both go through `adb pa
 
 - Default ADB binary: `~/Library/Android/sdk/platform-tools/adb.real`
 - Discovery: `dns-sd` for `_adb-tls-pairing._tcp` / `_adb-tls-connect._tcp`, plus `adb mdns services`
-- Local install path: `~/Library/Application Support/Droppy/Droplets/dev-connect/AdbPair.droplet`
+- Local install path: `~/Library/Application Support/Droppy/Droplets/dev-connect/DevConnect.droplet`
 - Droppy is unsigned-sideload: it asks every launch until a Store-signed build exists
 
 ## The loop
@@ -26,8 +26,8 @@ Wireless ADB pairing from the shelf. QR and 6-digit code both go through `adb pa
 Every change goes through all of this, in order. A droplet can compile,
 validate and then draw nothing, so a green build is not the end.
 
-1. Edit `Sources/AdbPair/`. The manifest is `droplet.json`.
-2. `droppykit build` writes `.build/AdbPair.droplet`, universal, linked against the
+1. Edit `Sources/DevConnect/`. The manifest is `droplet.json`.
+2. `droppykit build` writes `.build/DevConnect.droplet`, universal, linked against the
    framework Droppy ships. Never a bare `swift build` for the bundle: it folds a second
    copy of DroppyKit into the droplet, and that bundle loads in the harness and dies
    inside Droppy at dyld with "Symbol not found".
@@ -37,8 +37,8 @@ validate and then draw nothing, so a green build is not the end.
    Read `report.json`: `problems` must be empty and every surface you declared must be
    `provided`.
 5. Put the bundle into Droppy Playground and confirm it loaded. Copy
-   `.build/AdbPair.droplet` to
-   `~/Library/Application Support/Droppy Playground/Droplets/dev-connect/AdbPair.droplet`,
+   `.build/DevConnect.droplet` to
+   `~/Library/Application Support/Droppy Playground/Droplets/dev-connect/DevConnect.droplet`,
    relaunch the Playground, and read its Store row: the subtitle is the loader's verdict.
 
 With the DroppyKit MCP server connected, the same steps are the tools `droppykit_build`,
@@ -116,10 +116,10 @@ package pins; `droppykit update` moves both to the newest release. A build that 
 - **Host calls are gated by `capabilities`.** A service call without its capability in
   `droplet.json` is refused: it returns `false` or `nil` and logs one line. Declare what you
   use and only that; the user sees the list.
-- **The principal class does nothing.** `AdbPairPrincipal` is `@objc`, is named in the
+- **The principal class does nothing.** `DevConnectPrincipal` is `@objc`, is named in the
   bundle's `NSPrincipalClass`, and only creates the droplet. It runs before the host is ready.
 - **No `main.swift`.** The harness entry is `@main` in
-  `Sources/AdbPairHarness/AdbPairHarness.swift`, and a file named `main.swift` cannot
+  `Sources/DevConnectHarness/DevConnectHarness.swift`, and a file named `main.swift` cannot
   coexist with `@main`.
 - **Look like Droppy, not like a guest.** Surfaces are dark. Foreground colours come from
   `AdaptiveColors`, spacing from `DroppySpacing`, radii from `DroppyRadius` with
@@ -179,13 +179,13 @@ call in order, refused ones marked.
 ## Package layout
 
 ```
-Package.swift                     product AdbPair (dynamic) and AdbPairHarness
+Package.swift                     product DevConnect (dynamic) and DevConnectHarness
 droplet.json                      the manifest; Info.plist is generated from it
-Sources/AdbPair/              the droplet
-Sources/AdbPairHarness/       the @main harness entry; never main.swift
-AdbPair.icon/                 Icon Composer document, required
+Sources/DevConnect/           the droplet
+Sources/DevConnectHarness/    the @main harness entry; never main.swift
+DevConnect.icon/              Icon Composer document, required
 Assets/Creator.png                square creator avatar, at least 256px, required
-.build/AdbPair.droplet        what droppykit build writes
+.build/DevConnect.droplet        what droppykit build writes
 AGENTS.md, CLAUDE.md, .cursor/    this brief and the agent wiring
 .mcp.json, .cursor/mcp.json       the DroppyKit MCP server; absolute paths for this Mac
 ```
