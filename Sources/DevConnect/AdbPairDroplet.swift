@@ -1223,49 +1223,49 @@ private struct AdbPairSettings: View {
                 }
             }
 
-            DropletSettingsCard {
-                DropletControlRow(title: "Android") {
-                    EmptyView()
-                }
-                if droplet.devices.isEmpty {
-                    DropletSettingsDivider()
-                    DropletControlRow(title: "None") {
-                        EmptyView()
-                    }
-                } else {
-                    ForEach(droplet.devices) { device in
-                        DropletSettingsDivider()
-                        DropletControlRow(title: device.title) {
-                            if device.isWireless {
-                                Button("Unpair") { droplet.disconnect(device) }
-                                    .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
-                            } else {
-                                EmptyView()
+            VStack(alignment: .leading, spacing: DroppySpacing.xsm) {
+                settingsSectionHeader("Android")
+                DropletSettingsCard {
+                    if droplet.devices.isEmpty {
+                        DropletControlRow(title: "None") {
+                            EmptyView()
+                        }
+                    } else {
+                        ForEach(Array(droplet.devices.enumerated()), id: \.element.id) { index, device in
+                            if index > 0 { DropletSettingsDivider() }
+                            DropletControlRow(title: device.title) {
+                                if device.isWireless {
+                                    Button("Unpair") { droplet.disconnect(device) }
+                                        .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
+                                } else {
+                                    EmptyView()
+                                }
                             }
                         }
                     }
                 }
-                DropletSettingsDivider()
-                DropletControlRow(title: "iOS") {
-                    EmptyView()
-                }
-                if droplet.iosDevices.isEmpty {
-                    DropletSettingsDivider()
-                    DropletControlRow(title: "None") {
-                        EmptyView()
-                    }
-                } else {
-                    ForEach(droplet.iosDevices) { device in
-                        DropletSettingsDivider()
-                        DropletControlRow(title: device.title) {
-                            if device.isPaired {
-                                Button("Unpair") { droplet.unpairIOS(device) }
-                                    .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
-                            } else if device.canPair {
-                                Button("Pair") { droplet.handleIOS(device) }
-                                    .buttonStyle(DroppyQuietButtonStyle(size: .small))
-                            } else {
-                                EmptyView()
+            }
+
+            VStack(alignment: .leading, spacing: DroppySpacing.xsm) {
+                settingsSectionHeader("iOS")
+                DropletSettingsCard {
+                    if droplet.iosDevices.isEmpty {
+                        DropletControlRow(title: "None") {
+                            EmptyView()
+                        }
+                    } else {
+                        ForEach(Array(droplet.iosDevices.enumerated()), id: \.element.id) { index, device in
+                            if index > 0 { DropletSettingsDivider() }
+                            DropletControlRow(title: device.title) {
+                                if device.isPaired {
+                                    Button("Unpair") { droplet.unpairIOS(device) }
+                                        .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
+                                } else if device.canPair {
+                                    Button("Pair") { droplet.handleIOS(device) }
+                                        .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                                } else {
+                                    EmptyView()
+                                }
                             }
                         }
                     }
