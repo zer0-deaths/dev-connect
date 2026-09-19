@@ -154,10 +154,12 @@ enum DeviceCtl {
         let name = (state["name"] as? String)
             ?? (hardware["marketingName"] as? String)
             ?? ""
-        let model = hardware["marketingName"] as? String
-            ?? hardware["productType"] as? String
-            ?? hardware["deviceType"] as? String
-            ?? ""
+        let model = displayModel(
+            hardware["marketingName"] as? String
+                ?? hardware["productType"] as? String
+                ?? hardware["deviceType"] as? String
+                ?? ""
+        )
         return IOSDevice(
             id: identifier,
             udid: udid.isEmpty ? identifier : udid,
@@ -168,5 +170,14 @@ enum DeviceCtl {
             connectionState: connection["state"] as? String ?? "",
             isSimulator: isSimulator
         )
+    }
+
+    /// Apple product types use a comma (`iPhone18,1`). Show a dot instead.
+    private static func displayModel(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let comma = trimmed.lastIndex(of: ",") else { return trimmed }
+        let suffix = trimmed[trimmed.index(after: comma)...]
+        guard suffix.allSatisfy(\.isNumber), !suffix.isEmpty else { return trimmed }
+        return trimmed.replacingOccurrences(of: ",", with: ".")
     }
 }
