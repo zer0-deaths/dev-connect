@@ -1235,12 +1235,11 @@ private struct AdbPairSettings: View {
                 ForEach(Array(droplet.devices.enumerated()), id: \.element.id) { index, device in
                     if index > 0 { DropletSettingsDivider() }
                     DropletControlRow(title: device.title) {
-                        HStack(spacing: DroppySpacing.sm) {
-                            DropletValuePill(text: device.state)
-                            if device.isWireless {
-                                Button("Disconnect") { droplet.disconnect(device) }
-                                    .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
-                            }
+                        if device.isWireless {
+                            Button("Disconnect") { droplet.disconnect(device) }
+                                .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
+                        } else {
+                            EmptyView()
                         }
                     }
                 }
@@ -1255,15 +1254,14 @@ private struct AdbPairSettings: View {
                 ForEach(Array(droplet.iosDevices.enumerated()), id: \.element.id) { index, device in
                     if index > 0 { DropletSettingsDivider() }
                     DropletControlRow(title: device.title) {
-                        HStack(spacing: DroppySpacing.sm) {
-                            DropletValuePill(text: device.trailing)
-                            if device.isPaired {
-                                Button("Unpair") { droplet.unpairIOS(device) }
-                                    .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
-                            } else if device.canPair {
-                                Button("Pair") { droplet.handleIOS(device) }
-                                    .buttonStyle(DroppyQuietButtonStyle(size: .small))
-                            }
+                        if device.isPaired {
+                            Button("Unpair") { droplet.unpairIOS(device) }
+                                .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
+                        } else if device.canPair {
+                            Button("Pair") { droplet.handleIOS(device) }
+                                .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                        } else {
+                            EmptyView()
                         }
                     }
                 }
