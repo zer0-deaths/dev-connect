@@ -1,7 +1,7 @@
 {
-  "id": "adb-pair",
+  "id": "dev-connect",
   "name": "Dev Connect",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "summary": "Pair Android over Wi-Fi, and iPhone over USB Trust",
   "description": "Pair Android from Droppy's shelf with a QR or a 6-digit wireless debugging code. iPhone has no QR pair: plug in USB, tap Pair, then Trust on the phone. Uses adb and Xcode devicectl.",
   "category": "Productivity",
@@ -9,7 +9,7 @@
     "abi": 1,
     "minAPI": "1.6.0"
   },
-  "minAppVersion": "15.3.0",
+  "minAppVersion": "15.2.0",
   "capabilities": [
     "hud",
     "shelf-write"

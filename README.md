@@ -17,7 +17,7 @@ droppykit validate
 Install the bundle into Droppy Playground:
 
 ```
-~/Library/Application Support/Droppy Playground/Droplets/adb-pair/AdbPair.droplet
+~/Library/Application Support/Droppy Playground/Droplets/dev-connect/AdbPair.droplet
 ```
 
 MIT license.

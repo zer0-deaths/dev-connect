@@ -11,7 +11,7 @@ public final class AdbPairPrincipal: NSObject, DropletPrincipal {
 
 @MainActor
 public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
-    public nonisolated static let id: DropletID = "adb-pair"
+    public nonisolated static let id: DropletID = "dev-connect"
 
     private var host: DropletHost?
     private var pollTimer: AnyCancellable?
@@ -220,7 +220,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         lastError = nil
         resetMeasuredHeight()
         addFlow = platform == .ios ? .iosHelp : .pickAndroid
-        _ = host?.shelf.open(revealing: "adb-pair")
+        _ = host?.shelf.open(revealing: "dev-connect")
         _ = host?.shelf.setHoldsOpen(true)
         refreshWidgetLayout()
     }
@@ -240,7 +240,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
             startCodeWait()
         }
         host?.log.info("pairing \(mode.rawValue)")
-        _ = host?.shelf.open(revealing: "adb-pair")
+        _ = host?.shelf.open(revealing: "dev-connect")
         _ = host?.shelf.setHoldsOpen(true)
         refreshWidgetLayout()
         presentHUD(text: mode == .qr ? "Scan QR" : "Enter code", detail: "Dev Connect")
@@ -355,7 +355,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
     }
 
     func refreshWidgetLayout() {
-        host?.shelf.invalidateLayout(for: "adb-pair")
+        host?.shelf.invalidateLayout(for: "dev-connect")
     }
 
     func applyPairingCode(_ raw: String) {
@@ -616,7 +616,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
 
     private func presentHUD(text: String, detail: String) {
         let request = DropletHUDRequest(
-            id: "adb-pair.status",
+            id: "dev-connect.status",
             duration: 2.4,
             priority: .high,
             accessibilityLabel: "\(text) \(detail)"
@@ -657,7 +657,7 @@ extension AdbPairDroplet: ShelfWidgetProviding {
     public var widgetDescriptors: [ShelfWidgetDescriptor] {
         [
             ShelfWidgetDescriptor(
-                id: "adb-pair",
+                id: "dev-connect",
                 title: "Dev Connect",
                 systemImage: "link",
                 layoutTraits: ShelfWidgetLayoutTraits(

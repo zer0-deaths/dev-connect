@@ -7,7 +7,7 @@ Dynamic Island and shelf for Mac, written in SwiftUI against **DroppyKit**.
 Droppy loads the built `.droplet` bundle into its own process and draws it on
 the notch, the shelf, the lock screen and the menu bar.
 
-- Droplet id: `adb-pair`. It is also `AdbPairDroplet.id` in Swift and `id` in `droplet.json`; the three must agree or the loader refuses the bundle.
+- Droplet id: `dev-connect`. It is also `AdbPairDroplet.id` in Swift and `id` in `droplet.json`; the three must agree or the loader refuses the bundle.
 - Swift product: `AdbPair`, a dynamic library. The harness target is `AdbPairHarness`.
 - SDK checkout: `/Users/midnight/Developer/droppykit` (DroppyKit 1.8.1). Docs online: https://getdroppy.app/docs/droppykit
 - Host: Droppy 15.3 or later, which runs an unsigned bundle once its user approves that build under Settings, Store, Local droplets and asks again each time it opens, or the free Droppy Playground (https://getdroppy.app/download/playground), which loads unsigned bundles without asking.
@@ -18,7 +18,7 @@ Wireless ADB pairing from the shelf. QR and 6-digit code both go through `adb pa
 
 - Default ADB binary: `~/Library/Android/sdk/platform-tools/adb.real`
 - Discovery: `dns-sd` for `_adb-tls-pairing._tcp` / `_adb-tls-connect._tcp`, plus `adb mdns services`
-- Local install path: `~/Library/Application Support/Droppy/Droplets/adb-pair/AdbPair.droplet`
+- Local install path: `~/Library/Application Support/Droppy/Droplets/dev-connect/AdbPair.droplet`
 - Droppy is unsigned-sideload: it asks every launch until a Store-signed build exists
 
 ## The loop
@@ -38,7 +38,7 @@ validate and then draw nothing, so a green build is not the end.
    `provided`.
 5. Put the bundle into Droppy Playground and confirm it loaded. Copy
    `.build/AdbPair.droplet` to
-   `~/Library/Application Support/Droppy Playground/Droplets/adb-pair/AdbPair.droplet`,
+   `~/Library/Application Support/Droppy Playground/Droplets/dev-connect/AdbPair.droplet`,
    relaunch the Playground, and read its Store row: the subtitle is the loader's verdict.
 
 With the DroppyKit MCP server connected, the same steps are the tools `droppykit_build`,
