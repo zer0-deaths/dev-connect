@@ -24,10 +24,11 @@
     "name": "zer0-deaths",
     "kind": "community",
     "url": "https://github.com/zer0-deaths",
-    "avatar": "Creator.png"
+    "avatar": "Creator.png",
+    "gitlab": "taskless.nl"
   },
   "source": {
-    "repository": "https://github.com/zer0-deaths/dev-connect",
+    "repository": "https://gitlab.com/droppyformac1/droplets/-/tree/main/droplets/dev-connect",
     "license": "MIT"
   },
   "keywords": [
