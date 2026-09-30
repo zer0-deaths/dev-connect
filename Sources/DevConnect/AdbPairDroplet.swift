@@ -820,17 +820,14 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         }
         if let pairing = pairingTargets.first(where: { $0.host == target.host }) {
             selectedTargetID = pairing.id
-            presentPairing(.code)
-            lastError = "Need the 6-digit pairing code"
-            status = "Need the 6-digit pairing code"
-            presentHUD(text: "Pair first", detail: target.host)
-            return
         }
-        let message = result.output.isEmpty ? "Connect failed. Pair with QR." : result.output
-        lastError = message
-        status = message
-        presentHUD(text: "Failed", detail: target.host)
-        presentPairing(.qr)
+        lastError = result.output.isEmpty ? "Need the 6-digit pairing code" : result.output
+        status = "Need the 6-digit pairing code"
+        presentHUD(text: "Pair first", detail: target.host)
+        // Stay on the code pad if that is already open. Never jump to QR.
+        if addFlow != .code && addFlow != .qr {
+            presentPairing(.code)
+        }
     }
 
     private func finishConnected() {
@@ -866,11 +863,27 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         _ = host?.hud.present(request)
     }
 
+    /// Phones to list on the pairing-code screen. Pairing ads first, then
+    /// connect ads for hosts that have not advertised a pairing port yet.
+    var codeScanPhones: [PairingTarget] {
+        var phones = pairingTargets
+        let pairingHosts = Set(pairingTargets.map(\.host))
+        for target in connectTargets where !pairingHosts.contains(target.host) {
+            phones.append(target)
+        }
+        return phones
+    }
+
     private func currentTarget() -> PairingTarget? {
         if let id = selectedTargetID {
-            return pairingTargets.first(where: { $0.id == id })
+            if let pairing = pairingTargets.first(where: { $0.id == id }) { return pairing }
+            if let connect = connectTargets.first(where: { $0.id == id }),
+               let pairing = pairingTargets.first(where: { $0.host == connect.host }) {
+                return pairing
+            }
         }
-        return pairingTargets.count == 1 ? pairingTargets.first : nil
+        if pairingTargets.count == 1 { return pairingTargets.first }
+        return nil
     }
 
     private func parseManualHost() -> PairingTarget? {
@@ -1200,27 +1213,16 @@ private struct AdbPairWidget: View {
 
     private var widgetCode: some View {
         VStack(alignment: .leading, spacing: DroppySpacing.sm) {
-            if droplet.pairingTargets.isEmpty, droplet.connectTargets.isEmpty {
+            if droplet.codeScanPhones.isEmpty {
                 AdbCaption("On the phone, tap Pair device with pairing code.")
                 AdbDeviceChip(title: "Looking for a phone", subtitle: droplet.status)
-            } else if droplet.pairingTargets.isEmpty {
-                AdbCaption("Already paired. Connect, or open Pair device with pairing code.")
-                ForEach(droplet.connectTargets.prefix(4)) { target in
-                    Button {
-                        droplet.connectNearby(target)
-                    } label: {
-                        AdbDeviceChip(
-                            title: target.host,
-                            subtitle: "port \(verbatimPort(target.port))",
-                            selected: false,
-                            chevron: true
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
             } else {
-                AdbCaption("Enter the 6-digit code from the phone.")
-                ForEach(droplet.pairingTargets.prefix(4)) { target in
+                AdbCaption(
+                    droplet.pairingTargets.isEmpty
+                        ? "On the phone, tap Pair device with pairing code."
+                        : "Enter the 6-digit code from the phone."
+                )
+                ForEach(droplet.codeScanPhones.prefix(4)) { target in
                     Button {
                         droplet.selectTarget(target)
                     } label: {

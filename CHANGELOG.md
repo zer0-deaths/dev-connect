@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.6] - 2026-09-30
+
+- Tapping a phone in the pairing-code flow stays on the code pad. A failed connect no longer opens QR.
+
 ## [1.2.5] - 2026-09-30
 
 - Keep dns-sd phones on screen. An empty `adb mdns services` poll no longer clears the scan list.
