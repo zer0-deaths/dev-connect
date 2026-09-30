@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.7] - 2026-09-30
+
+- Connect on an already-paired Android row. Unpair stays next to it. Connect uses the live tls-connect port when dns-sd has one.
+
 ## [1.2.6] - 2026-09-30
 
 - Tapping a phone in the pairing-code flow stays on the code pad. A failed connect no longer opens QR.

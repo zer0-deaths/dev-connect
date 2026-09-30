@@ -429,11 +429,28 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         for target in connectTargets { connectByHost[target.host] = target }
         let hosts = Set(pairingByHost.keys).union(connectByHost.keys)
         return hosts.sorted().compactMap { host in
-            if devices.contains(where: { $0.serial.hasPrefix("\(host):") && $0.isReady }) {
+            if devices.contains(where: { $0.serial.hasPrefix("\(host):") }) {
                 return nil
             }
             return NearbyPhone(host: host, pairing: pairingByHost[host], connect: connectByHost[host])
         }
+    }
+
+    /// Live tls-connect port if advertised, otherwise the serial itself.
+    func connectTarget(for device: ADBDevice) -> PairingTarget? {
+        guard device.isWireless, let colon = device.serial.lastIndex(of: ":"),
+              let port = Int(device.serial[device.serial.index(after: colon)...])
+        else { return nil }
+        let host = String(device.serial[..<colon])
+        if let advertised = connectTargets.first(where: { $0.host == host }) {
+            return advertised
+        }
+        return PairingTarget(name: device.title, host: host, port: port)
+    }
+
+    func connectDevice(_ device: ADBDevice) {
+        guard let target = connectTarget(for: device) else { return }
+        connectNearby(target)
     }
 
     func handleNearby(_ phone: NearbyPhone) {
@@ -1117,8 +1134,10 @@ private struct AdbPairWidget: View {
                 title: device.title,
                 subtitle: compact ? nil : device.serial,
                 selected: device.isReady,
-                trailing: "Unpair",
-                trailingAction: { droplet.requestUnpairAndroid(device) },
+                extraTrailing: compact && device.isReady ? nil : "Connect",
+                extraTrailingAction: compact && device.isReady ? nil : { droplet.connectDevice(device) },
+                trailing: compact && !device.isReady ? nil : "Unpair",
+                trailingAction: compact && !device.isReady ? nil : { droplet.requestUnpairAndroid(device) },
                 destructive: true,
                 pendingConfirm: droplet.pendingUnpair == .android(device.serial),
                 onConfirm: { droplet.confirmUnpair() },
@@ -1138,17 +1157,13 @@ private struct AdbPairWidget: View {
         VStack(spacing: DroppySpacing.xsm) {
             if !droplet.nearbyPhones.isEmpty, !context.isCompact {
                 ForEach(droplet.nearbyPhones.prefix(2)) { phone in
-                    Button {
-                        droplet.handleNearby(phone)
-                    } label: {
-                        AdbDeviceChip(
-                            title: phone.host,
-                            subtitle: phone.pairing.map { "port \(verbatimPort($0.port))" },
-                            selected: false,
-                            chevron: true
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    AdbDeviceChip(
+                        title: phone.host,
+                        subtitle: phone.pairing.map { "port \(verbatimPort($0.port))" } ?? "Already paired",
+                        selected: false,
+                        trailing: phone.actionTitle,
+                        trailingAction: { droplet.handleNearby(phone) }
+                    )
                 }
             }
             if context.isCompact, let device = droplet.devices.first {
@@ -1281,6 +1296,8 @@ private struct AdbDeviceChip: View {
     let title: String
     let subtitle: String?
     var selected: Bool = false
+    var extraTrailing: String? = nil
+    var extraTrailingAction: (() -> Void)? = nil
     var trailing: String? = nil
     var trailingAction: (() -> Void)? = nil
     var chevron: Bool = false
@@ -1326,8 +1343,19 @@ private struct AdbDeviceChip: View {
                 capsuleButton("Cancel", destructive: false, action: { onCancel?() })
                 capsuleButton("Confirm", destructive: true, action: { onConfirm?() })
             }
-        } else if let trailingAction, let trailing {
-            capsuleButton(trailing, destructive: destructive, action: trailingAction)
+        } else if extraTrailing != nil || trailing != nil {
+            HStack(spacing: DroppySpacing.xs) {
+                if let extraTrailing, let extraTrailingAction {
+                    capsuleButton(extraTrailing, destructive: false, action: extraTrailingAction)
+                }
+                if let trailingAction, let trailing {
+                    capsuleButton(trailing, destructive: destructive, action: trailingAction)
+                } else if let trailing {
+                    Text(verbatim: trailing)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
+                }
+            }
         } else if chevron {
             Image(systemName: selected ? "checkmark" : "chevron.right")
                 .font(.system(size: 11, weight: .semibold))
