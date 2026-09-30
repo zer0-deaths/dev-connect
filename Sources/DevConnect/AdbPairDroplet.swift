@@ -35,7 +35,12 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
     private var seenConnect: Set<String> = []
     private var expectedConnectIP: String?
 
-    @Published var devices: [ADBDevice] = []
+    @Published var devices: [ADBDevice] = [] {
+        didSet { rememberWireless() }
+    }
+    /// Wireless phones seen connected, serial to model. Kept after a
+    /// disconnect so the row stays with Connect; Unpair forgets it.
+    @Published private(set) var knownPhones: [String: String] = [:]
     @Published var pairingTargets: [PairingTarget] = []
     @Published var connectTargets: [PairingTarget] = []
     @Published var status: String = "Ready"
@@ -78,6 +83,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
             }
         }
         deviceCtlPath = DeviceCtl.resolve()
+        knownPhones = host.preferences.value(forKey: "knownPhones", default: [String: String]())
         host.installState.statePublisher
             .sink { [weak self] _ in
                 guard let self, self.isCurrent(generation) else { return }
@@ -221,6 +227,52 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         pendingUnpair = .android(device.serial)
     }
 
+    /// Every wireless phone the user has had connected, plus whatever adb
+    /// lists now. A known phone that is not connected shows as "disconnected".
+    var androidRows: [ADBDevice] {
+        var rows = devices
+        for (serial, model) in knownPhones.sorted(by: { $0.key < $1.key })
+        where !devices.contains(where: { $0.serial == serial }) {
+            rows.append(ADBDevice(serial: serial, state: "disconnected", model: model, hardware: ""))
+        }
+        return rows
+    }
+
+    private func ipOf(_ serial: String) -> String? {
+        serial.lastIndex(of: ":").map { String(serial[..<$0]) }
+    }
+
+    private func rememberWireless() {
+        var known = knownPhones
+        for device in devices where device.isWireless && !device.isMDNSHostname && device.isReady {
+            guard known[device.serial] != device.model, let ip = ipOf(device.serial) else { continue }
+            // Wireless debugging picks a new port each time; keep one row per phone.
+            known = known.filter { ipOf($0.key) != ip }
+            known[device.serial] = device.model
+        }
+        guard known != knownPhones else { return }
+        knownPhones = known
+        host?.preferences.setValue(known, forKey: "knownPhones")
+    }
+
+    func disconnectAndroid(_ device: ADBDevice) {
+        connectResult = nil
+        lastError = nil
+        disconnect(device)
+        presentHUD(text: "Disconnected", detail: device.title)
+    }
+
+    func unpairAndroid(_ device: ADBDevice) {
+        connectResult = nil
+        lastError = nil
+        if devices.contains(where: { $0.serial == device.serial }) {
+            disconnect(device)
+        }
+        knownPhones[device.serial] = nil
+        host?.preferences.setValue(knownPhones, forKey: "knownPhones")
+        presentHUD(text: "Unpaired", detail: device.title)
+    }
+
     func requestUnpairIOS(_ device: IOSDevice) {
         pendingUnpair = .ios(device.id)
     }
@@ -233,10 +285,8 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         switch pendingUnpair {
         case .android(let serial):
             pendingUnpair = nil
-            connectResult = nil
-            if let device = devices.first(where: { $0.serial == serial }) {
-                disconnect(device)
-                presentHUD(text: "Disconnected", detail: device.title)
+            if let device = androidRows.first(where: { $0.serial == serial }) {
+                unpairAndroid(device)
             }
         case .ios(let id):
             pendingUnpair = nil
@@ -402,7 +452,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
                 let extra = CGFloat(min(max(iosDevices.count, 1), 3))
                 return 180 + extra * 52
             }
-            let extra = CGFloat(min(max(nearbyPhones.count + devices.count, 1), 3))
+            let extra = CGFloat(min(max(nearbyPhones.count + androidRows.count, 1), 3))
             return 180 + extra * 48
         }
     }
@@ -431,7 +481,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         for target in connectTargets { connectByHost[target.host] = target }
         let hosts = Set(pairingByHost.keys).union(connectByHost.keys)
         return hosts.sorted().compactMap { host in
-            if devices.contains(where: { $0.serial.hasPrefix("\(host):") }) {
+            if androidRows.contains(where: { $0.serial.hasPrefix("\(host):") }) {
                 return nil
             }
             return NearbyPhone(host: host, pairing: pairingByHost[host], connect: connectByHost[host])
@@ -1124,10 +1174,12 @@ private struct AdbPairWidget: View {
         if device.isWireless {
             AdbDeviceChip(
                 title: device.title,
-                subtitle: compact ? nil : device.serial,
+                subtitle: compact ? nil : (device.isReady ? device.serial : "\(device.serial), not connected"),
                 selected: device.isReady,
-                extraTrailing: "Connect",
-                extraTrailingAction: { droplet.connectDevice(device) },
+                extraTrailing: device.isReady ? "Disconnect" : "Connect",
+                extraTrailingAction: device.isReady
+                    ? { droplet.disconnectAndroid(device) }
+                    : { droplet.connectDevice(device) },
                 trailing: "Unpair",
                 trailingAction: { droplet.requestUnpairAndroid(device) },
                 destructive: true,
@@ -1158,14 +1210,14 @@ private struct AdbPairWidget: View {
                     )
                 }
             }
-            if context.isCompact, let device = droplet.devices.first {
+            if context.isCompact, let device = droplet.androidRows.first {
                 androidRow(device, compact: true)
             } else if !context.isCompact {
-                ForEach(droplet.devices.prefix(3)) { device in
+                ForEach(droplet.androidRows.prefix(3)) { device in
                     androidRow(device, compact: false)
                 }
             }
-            if droplet.devices.isEmpty && droplet.nearbyPhones.isEmpty {
+            if droplet.androidRows.isEmpty && droplet.nearbyPhones.isEmpty {
                 AdbCaption("No devices.")
             }
             if let error = droplet.lastError, !error.isEmpty {
@@ -1499,15 +1551,15 @@ private struct AdbPairSettings: View {
                 settingsSectionHeader("Android")
             } content: {
                 DropletSettingsCard {
-                    if droplet.devices.isEmpty {
+                    if droplet.androidRows.isEmpty {
                         DropletControlRow(title: "None") {
                             EmptyView()
                         }
                     } else {
-                        ForEach(droplet.devices) { device in
+                        ForEach(droplet.androidRows) { device in
                             DropletControlRow(title: device.title) {
                                 if device.isWireless {
-                                    Button("Unpair") { droplet.disconnect(device) }
+                                    Button("Unpair") { droplet.unpairAndroid(device) }
                                         .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
                                 } else {
                                     EmptyView()
