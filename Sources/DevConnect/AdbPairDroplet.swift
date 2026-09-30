@@ -680,20 +680,28 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
                     connect.append(target)
                 }
             }
-            let changed = connect != self.connectTargets || pairing != self.pairingTargets
-            self.connectTargets = connect
-            self.pairingTargets = pairing
+            // adb mdns is often empty while dns-sd still has the phone.
+            // Union into the browse lists. Never replace them with [].
+            var changed = false
+            for target in pairing where !self.pairingTargets.contains(target) {
+                self.pairingTargets.append(target)
+                changed = true
+            }
+            for target in connect where !self.connectTargets.contains(target) {
+                self.connectTargets.append(target)
+                changed = true
+            }
             if self.selectedTargetID == nil {
-                self.selectedTargetID = pairing.first?.id
+                self.selectedTargetID = self.pairingTargets.first?.id
             }
             if changed { self.refreshWidgetLayout() }
             if self.isPairingOpen, self.mode == .qr {
-                for target in pairing where target.name == self.qrName || target.name.hasPrefix(self.qrName) {
+                for target in self.pairingTargets where target.name == self.qrName || target.name.hasPrefix(self.qrName) {
                     self.beginPair(target: target, password: self.qrPassword)
                     return
                 }
             } else if self.isPairingOpen, self.mode == .code {
-                if !pairing.isEmpty, self.pairingCode.count == 6 {
+                if !self.pairingTargets.isEmpty, self.pairingCode.count == 6 {
                     self.beginPairEnteredCode()
                 }
             }

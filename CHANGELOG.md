@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.5] - 2026-09-30
+
+- Keep dns-sd phones on screen. An empty `adb mdns services` poll no longer clears the scan list.
+
 ## [1.2.4] - 2026-09-30
 
 - Poll while the shelf is open or an add/pair flow is up, even if the host leaves activeWidgetIDs empty.
