@@ -51,6 +51,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
 
     var isPairingOpen: Bool { addFlow == .qr || addFlow == .code }
     @Published var lastError: String?
+    @Published var connectResult: String?
     @Published var resolvedADBPath: String = ""
     @Published var platform: DevicePlatform = .android
     @Published var iosDevices: [IOSDevice] = []
@@ -232,6 +233,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         switch pendingUnpair {
         case .android(let serial):
             pendingUnpair = nil
+            connectResult = nil
             if let device = devices.first(where: { $0.serial == serial }) {
                 disconnect(device)
                 presentHUD(text: "Disconnected", detail: device.title)
@@ -441,10 +443,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
               let port = Int(device.serial[device.serial.index(after: colon)...])
         else { return }
         let host = String(device.serial[..<colon])
-        connectNearby(
-            PairingTarget(name: device.title, host: host, port: port),
-            openPairingOnFailure: false
-        )
+        connectNearby(PairingTarget(name: device.title, host: host, port: port))
     }
 
     func handleNearby(_ phone: NearbyPhone) {
@@ -480,19 +479,16 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         }
     }
 
-    func connectNearby(_ target: PairingTarget, openPairingOnFailure: Bool = true) {
+    func connectNearby(_ target: PairingTarget) {
         lastError = nil
+        connectResult = nil
         status = "Connecting \(target.host)"
         presentHUD(text: "Connecting", detail: target.host)
         host?.log.info("connect tap \(target.host):\(target.port)")
         connectTask?.cancel()
         let generation = activationGeneration
         connectTask = Task { [weak self] in
-            await self?.connect(
-                target: target,
-                generation: generation,
-                openPairingOnFailure: openPairingOnFailure
-            )
+            await self?.connect(target: target, generation: generation)
             guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.connectTask, generation: generation)
         }
@@ -809,15 +805,14 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         }
         guard isCurrent(generation) else { return }
         isPairing = false
+        expectedConnectIP = nil
         status = "Paired. If it does not show up, toggle Wireless debugging."
         refreshDevices()
     }
 
-    private func connect(
-        target: PairingTarget,
-        generation: Int,
-        openPairingOnFailure: Bool = true
-    ) async {
+    /// Only `adb connect`. Never opens pairing: a failed connect is a HUD and
+    /// a caption, and the user picks Add new device if the phone needs pairing.
+    private func connect(target: PairingTarget, generation: Int) async {
         guard isCurrent(generation) else { return }
         refreshADBPath()
         guard !resolvedADBPath.isEmpty else {
@@ -834,23 +829,18 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         host?.log.info("adb connect \(target.host):\(target.port) -> \(result.output)")
         refreshDevices()
         if result.ok {
+            connectResult = result.output
             finishConnected()
             return
         }
         lastError = result.output.isEmpty ? "Connect failed" : result.output
         status = lastError ?? "Connect failed"
         presentHUD(text: "Connect failed", detail: target.host)
-        guard openPairingOnFailure else { return }
-        if let pairing = pairingTargets.first(where: { $0.host == target.host }) {
-            selectedTargetID = pairing.id
-        }
-        if addFlow != .code && addFlow != .qr {
-            presentPairing(.code)
-        }
     }
 
     private func finishConnected() {
         isPairing = false
+        expectedConnectIP = nil
         addFlow = .idle
         resetMeasuredHeight()
         status = "Connected"
@@ -1136,10 +1126,10 @@ private struct AdbPairWidget: View {
                 title: device.title,
                 subtitle: compact ? nil : device.serial,
                 selected: device.isReady,
-                extraTrailing: compact && device.isReady ? nil : "Connect",
-                extraTrailingAction: compact && device.isReady ? nil : { droplet.connectDevice(device) },
-                trailing: compact && !device.isReady ? nil : "Unpair",
-                trailingAction: compact && !device.isReady ? nil : { droplet.requestUnpairAndroid(device) },
+                extraTrailing: "Connect",
+                extraTrailingAction: { droplet.connectDevice(device) },
+                trailing: "Unpair",
+                trailingAction: { droplet.requestUnpairAndroid(device) },
                 destructive: true,
                 pendingConfirm: droplet.pendingUnpair == .android(device.serial),
                 onConfirm: { droplet.confirmUnpair() },
@@ -1180,6 +1170,8 @@ private struct AdbPairWidget: View {
             }
             if let error = droplet.lastError, !error.isEmpty {
                 AdbCaption(error)
+            } else if let result = droplet.connectResult, !result.isEmpty {
+                AdbCaption(result)
             }
             addDeviceButton
         }

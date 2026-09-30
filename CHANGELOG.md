@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.9] - 2026-09-30
+
+- Connect shows on every wireless Android row, grouped shelf included, and only runs `adb connect`. A failed connect never opens pairing; the adb output shows under the list.
+
 ## [1.2.8] - 2026-09-30
 
 - Connect on a listed Android runs `adb connect` on that serial. It does not open pairing.
