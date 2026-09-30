@@ -436,21 +436,15 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         }
     }
 
-    /// Live tls-connect port if advertised, otherwise the serial itself.
-    func connectTarget(for device: ADBDevice) -> PairingTarget? {
+    func connectDevice(_ device: ADBDevice) {
         guard device.isWireless, let colon = device.serial.lastIndex(of: ":"),
               let port = Int(device.serial[device.serial.index(after: colon)...])
-        else { return nil }
+        else { return }
         let host = String(device.serial[..<colon])
-        if let advertised = connectTargets.first(where: { $0.host == host }) {
-            return advertised
-        }
-        return PairingTarget(name: device.title, host: host, port: port)
-    }
-
-    func connectDevice(_ device: ADBDevice) {
-        guard let target = connectTarget(for: device) else { return }
-        connectNearby(target)
+        connectNearby(
+            PairingTarget(name: device.title, host: host, port: port),
+            openPairingOnFailure: false
+        )
     }
 
     func handleNearby(_ phone: NearbyPhone) {
@@ -486,7 +480,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         }
     }
 
-    func connectNearby(_ target: PairingTarget) {
+    func connectNearby(_ target: PairingTarget, openPairingOnFailure: Bool = true) {
         lastError = nil
         status = "Connecting \(target.host)"
         presentHUD(text: "Connecting", detail: target.host)
@@ -494,7 +488,11 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         connectTask?.cancel()
         let generation = activationGeneration
         connectTask = Task { [weak self] in
-            await self?.connect(target: target, generation: generation)
+            await self?.connect(
+                target: target,
+                generation: generation,
+                openPairingOnFailure: openPairingOnFailure
+            )
             guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.connectTask, generation: generation)
         }
@@ -815,7 +813,11 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         refreshDevices()
     }
 
-    private func connect(target: PairingTarget, generation: Int) async {
+    private func connect(
+        target: PairingTarget,
+        generation: Int,
+        openPairingOnFailure: Bool = true
+    ) async {
         guard isCurrent(generation) else { return }
         refreshADBPath()
         guard !resolvedADBPath.isEmpty else {
@@ -835,13 +837,13 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
             finishConnected()
             return
         }
+        lastError = result.output.isEmpty ? "Connect failed" : result.output
+        status = lastError ?? "Connect failed"
+        presentHUD(text: "Connect failed", detail: target.host)
+        guard openPairingOnFailure else { return }
         if let pairing = pairingTargets.first(where: { $0.host == target.host }) {
             selectedTargetID = pairing.id
         }
-        lastError = result.output.isEmpty ? "Need the 6-digit pairing code" : result.output
-        status = "Need the 6-digit pairing code"
-        presentHUD(text: "Pair first", detail: target.host)
-        // Stay on the code pad if that is already open. Never jump to QR.
         if addFlow != .code && addFlow != .qr {
             presentPairing(.code)
         }

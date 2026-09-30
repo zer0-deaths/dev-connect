@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.8] - 2026-09-30
+
+- Connect on a listed Android runs `adb connect` on that serial. It does not open pairing.
+
 ## [1.2.7] - 2026-09-30
 
 - Connect on an already-paired Android row. Unpair stays next to it. Connect uses the live tls-connect port when dns-sd has one.
