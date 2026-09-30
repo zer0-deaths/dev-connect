@@ -16,6 +16,9 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
     private var host: DropletHost?
     private var activationGeneration = 0
     private var pollTimer: AnyCancellable?
+    private var pollInterval: TimeInterval?
+    private var visibilityObservers: Set<AnyCancellable> = []
+    private var deviceCtlPath: String?
     private var pairingBrowse = DNSBrowse()
     private var connectBrowse = DNSBrowse()
     private var pairingTask: Task<Void, Never>?
@@ -52,6 +55,8 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
     @Published var pendingUnpair: PendingUnpair?
     @Published var measuredHeight: CGFloat = 0
 
+    var isIOSAvailable: Bool { deviceCtlPath != nil }
+
     var adbOverride: String {
         get { host?.preferences.value(forKey: "adbPath", default: "") ?? "" }
         set { host?.preferences.setValue(newValue, forKey: "adbPath") }
@@ -69,18 +74,57 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
                 ADB.startServer(path: path)
             }
         }
-        refreshDevices()
-        pollTimer = Timer.publish(every: 2, on: .main, in: .common)
+        deviceCtlPath = DeviceCtl.resolve()
+        host.installState.statePublisher
+            .sink { [weak self] _ in
+                guard let self, self.isCurrent(generation) else { return }
+                self.retunePoll()
+            }
+            .store(in: &visibilityObservers)
+        host.shelf.didChange
+            .sink { [weak self] _ in
+                guard let self, self.isCurrent(generation) else { return }
+                self.retunePoll()
+            }
+            .store(in: &visibilityObservers)
+        pollNow()
+        retunePoll()
+        host.log.info("Dev Connect activated adb=\(resolvedADBPath.isEmpty ? "missing" : resolvedADBPath) devicectl=\(deviceCtlPath ?? "missing")")
+    }
+
+    /// No poll while the widget is not on a shelf layout, a slow one while the
+    /// shelf is closed, and the fast one only while the shelf is open.
+    private var desiredPollInterval: TimeInterval? {
+        guard let host else { return nil }
+        let state = host.installState.state
+        guard state.isEnabled, state.activeWidgetIDs.contains("dev-connect") else { return nil }
+        return host.shelf.isExpanded ? 2 : 30
+    }
+
+    private func retunePoll() {
+        let interval = desiredPollInterval
+        guard interval != pollInterval else { return }
+        let previous = pollInterval
+        pollInterval = interval
+        pollTimer?.cancel()
+        pollTimer = nil
+        guard let interval else { return }
+        if previous.map({ interval < $0 }) ?? true {
+            pollNow()
+        }
+        let generation = activationGeneration
+        pollTimer = Timer.publish(every: interval, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self, self.isCurrent(generation) else { return }
-                self.refreshDevices()
-                self.pollADBMdns()
-                self.refreshIOSDevices()
+                self.pollNow()
             }
+    }
+
+    private func pollNow() {
+        refreshDevices()
         pollADBMdns()
         refreshIOSDevices()
-        host.log.info("Dev Connect activated adb=\(resolvedADBPath.isEmpty ? "missing" : resolvedADBPath)")
     }
 
     public func deactivate() {
@@ -125,6 +169,8 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         pairPoll = nil
         pollTimer?.cancel()
         pollTimer = nil
+        pollInterval = nil
+        visibilityObservers.removeAll()
         pairingBrowse.stop()
         connectBrowse.stop()
     }
@@ -134,11 +180,11 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
     }
 
     func refreshIOSDevices() {
-        guard host != nil else { return }
+        guard host != nil, let deviceCtl = deviceCtlPath else { return }
         if refreshIOSTask != nil { return }
         let generation = activationGeneration
         refreshIOSTask = Task { [weak self] in
-            let found = await Task.detached { DeviceCtl.listPhysical() }.value
+            let found = await Task.detached { DeviceCtl.listPhysical(path: deviceCtl) }.value
             guard let self else { return }
             self.clearTask(&self.refreshIOSTask, generation: generation)
             guard self.isCurrent(generation) else { return }
@@ -192,6 +238,10 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
 
     func handleIOS(_ device: IOSDevice) {
         pendingUnpair = nil
+        guard let deviceCtl = deviceCtlPath else {
+            presentHUD(text: "Xcode not found", detail: device.title)
+            return
+        }
         guard device.canPair else {
             presentHUD(text: device.trailing, detail: device.title)
             return
@@ -204,8 +254,8 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         iosActionTask?.cancel()
         let generation = activationGeneration
         iosActionTask = Task { [weak self] in
-            let result = await Task.detached { DeviceCtl.pair(identifier: device.udid) }.value
-            guard let self else { return }
+            let result = await Task.detached { DeviceCtl.pair(path: deviceCtl, identifier: device.udid) }.value
+            guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.iosActionTask, generation: generation)
             guard self.isCurrent(generation) else { return }
             self.isPairing = false
@@ -226,6 +276,10 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
     }
 
     func unpairIOS(_ device: IOSDevice) {
+        guard let deviceCtl = deviceCtlPath else {
+            presentHUD(text: "Xcode not found", detail: device.title)
+            return
+        }
         lastError = nil
         isPairing = true
         status = "Unpairing \(device.title)"
@@ -234,8 +288,8 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         iosActionTask?.cancel()
         let generation = activationGeneration
         iosActionTask = Task { [weak self] in
-            let result = await Task.detached { DeviceCtl.unpair(identifier: device.udid) }.value
-            guard let self else { return }
+            let result = await Task.detached { DeviceCtl.unpair(path: deviceCtl, identifier: device.udid) }.value
+            guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.iosActionTask, generation: generation)
             guard self.isCurrent(generation) else { return }
             self.isPairing = false
@@ -412,7 +466,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         let generation = activationGeneration
         connectTask = Task { [weak self] in
             await self?.connect(target: target, generation: generation)
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.connectTask, generation: generation)
         }
     }
@@ -476,7 +530,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         let generation = activationGeneration
         disconnectTask = Task { [weak self] in
             await Task.detached { ADB.disconnect(path: path, serial: serial) }.value
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.disconnectTask, generation: generation)
             guard self.isCurrent(generation) else { return }
             self.refreshDevices()
@@ -533,16 +587,15 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
 
     private func handlePairingInstance(_ name: String) {
         if mode == .qr, name != qrName, !name.hasPrefix(qrName) { return }
+        if isPairing { return }
         guard seenPairing.insert(name).inserted else { return }
-        if mode == .qr, isPairing { return }
         pairingTask?.cancel()
         let generation = activationGeneration
         pairingTask = Task { [weak self] in
             let resolved = await Task.detached { MDNSResolve.pairing(instance: name) }.value
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
             defer { self.clearTask(&self.pairingTask, generation: generation) }
             guard self.isCurrent(generation), let resolved else { return }
-            if Task.isCancelled { return }
             if self.mode == .qr {
                 await self.pair(target: resolved, password: self.qrPassword, generation: generation)
             } else {
@@ -609,7 +662,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         let generation = activationGeneration
         pairingTask = Task { [weak self] in
             await self?.pair(target: target, password: password, generation: generation)
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.pairingTask, generation: generation)
         }
     }
@@ -620,7 +673,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         let generation = activationGeneration
         pairingTask = Task { [weak self] in
             await self?.pairEnteredCode()
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
             self.clearTask(&self.pairingTask, generation: generation)
         }
     }
@@ -662,7 +715,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
             self.connectTask?.cancel()
             self.connectTask = Task { [weak self] in
                 let resolved = await Task.detached { MDNSResolve.connect(instance: name) }.value
-                guard let self else { return }
+                guard let self, !Task.isCancelled else { return }
                 self.clearTask(&self.connectTask, generation: generation)
                 guard self.isCurrent(generation), let resolved else { return }
                 if resolved.host == ip || self.expectedConnectIP == nil {
@@ -713,7 +766,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         let result = await Task.detached {
             ADB.connect(path: path, host: target.host, port: target.port)
         }.value
-        guard isCurrent(generation) else { return }
+        guard isCurrent(generation), !Task.isCancelled else { return }
         host?.log.info("adb connect \(target.host):\(target.port) -> \(result.output)")
         refreshDevices()
         if result.ok {
@@ -950,7 +1003,9 @@ private struct AdbPairWidget: View {
 
     private var iosList: some View {
         VStack(alignment: .leading, spacing: DroppySpacing.xsm) {
-            if droplet.iosDevices.isEmpty {
+            if !droplet.isIOSAvailable {
+                AdbCaption("Xcode not found.")
+            } else if droplet.iosDevices.isEmpty {
                 AdbCaption(context.isCompact ? "No iPhones" : "No physical iOS devices found.")
             } else if context.isCompact, let device = droplet.iosDevices.first {
                 iosRow(device)
@@ -1382,7 +1437,11 @@ private struct AdbPairSettings: View {
                 settingsSectionHeader("iOS")
             } content: {
                 DropletSettingsCard {
-                    if droplet.iosDevices.isEmpty {
+                    if !droplet.isIOSAvailable {
+                        DropletControlRow(title: "Xcode not found") {
+                            EmptyView()
+                        }
+                    } else if droplet.iosDevices.isEmpty {
                         DropletControlRow(title: "None") {
                             EmptyView()
                         }

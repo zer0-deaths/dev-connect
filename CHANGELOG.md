@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.3] - 2026-09-30
+
+- Poll devices only while the widget is on a shelf: every 2 seconds with the shelf open, every 30 seconds with it closed, and not at all when the widget is not placed. Opening the shelf refreshes at once.
+- Find Xcode's devicectl on disk once per activation and run it directly. Without Xcode the iOS side is skipped and xcrun is never run.
+- Declare shelf-read for observing the shelf.
+- Report an iPhone unpair from the command's outcome, and never read a previous run's JSON.
+- Kill a timed-out command that ignores terminate instead of crashing on its exit status.
+- Ignore results from a scan, pair or connect that was replaced or cancelled, and keep a new phone from cancelling a pair in progress.
+
 ## [1.2.2] - 2026-09-30
 
 - Cancel scans and pairing when the droplet is disabled, and ignore late command results.

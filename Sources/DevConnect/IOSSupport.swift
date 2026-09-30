@@ -49,12 +49,46 @@ struct IOSDevice: Identifiable, Equatable {
 }
 
 enum DeviceCtl {
-    static func listPhysical() -> [IOSDevice] {
+    /// Finds Xcode's `devicectl` on disk. Never runs the `/usr/bin/xcrun` shim
+    /// unless a real Developer directory exists, because without one it asks
+    /// the user to install the command line tools.
+    static func resolve(developerDirs: [String] = defaultDeveloperDirs()) -> String? {
+        let fm = FileManager.default
+        for dir in developerDirs {
+            for candidate in ["\(dir)/usr/bin/devicectl", "\(dir)/Contents/Developer/usr/bin/devicectl"]
+            where fm.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        let hasXcodeDir = developerDirs.contains { dir in
+            !dir.contains("CommandLineTools") && fm.fileExists(atPath: "\(dir)/usr/bin/xcodebuild")
+        }
+        guard hasXcodeDir, fm.isExecutableFile(atPath: "/usr/bin/xcrun") else { return nil }
+        let found = Shell.run(executable: "/usr/bin/xcrun", arguments: ["--find", "devicectl"], timeout: 5)
+        let path = found.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard found.status == 0, fm.isExecutableFile(atPath: path) else { return nil }
+        return path
+    }
+
+    static func defaultDeveloperDirs() -> [String] {
+        var dirs: [String] = []
+        if let env = ProcessInfo.processInfo.environment["DEVELOPER_DIR"], !env.isEmpty {
+            dirs.append(env)
+        }
+        if let link = try? FileManager.default.destinationOfSymbolicLink(atPath: "/var/db/xcode_select_link") {
+            dirs.append(link)
+        }
+        dirs.append("/Applications/Xcode.app/Contents/Developer")
+        return dirs
+    }
+
+    static func listPhysical(path: String) -> [IOSDevice] {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("adb-pair-ios-devices.json")
+        try? FileManager.default.removeItem(at: url)
         _ = Shell.run(
-            executable: "/usr/bin/xcrun",
+            executable: path,
             arguments: [
-                "devicectl", "list", "devices",
+                "list", "devices",
                 "--omit-deprecated-fields-in-json",
                 "--json-output", url.path
             ],
@@ -69,12 +103,13 @@ enum DeviceCtl {
         return devices.compactMap(parse).filter { !$0.isSimulator }
     }
 
-    static func pair(identifier: String) -> (ok: Bool, output: String) {
+    static func pair(path: String, identifier: String) -> (ok: Bool, output: String) {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("adb-pair-ios-pair.json")
+        try? FileManager.default.removeItem(at: url)
         let result = Shell.run(
-            executable: "/usr/bin/xcrun",
+            executable: path,
             arguments: [
-                "devicectl", "manage", "pair",
+                "manage", "pair",
                 "--device", identifier,
                 "--timeout", "60",
                 "--json-output", url.path
@@ -108,12 +143,13 @@ enum DeviceCtl {
         return (ok, fallbackOut.isEmpty ? output : fallbackOut)
     }
 
-    static func unpair(identifier: String) -> (ok: Bool, output: String) {
+    static func unpair(path: String, identifier: String) -> (ok: Bool, output: String) {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("adb-pair-ios-unpair.json")
+        try? FileManager.default.removeItem(at: url)
         let result = Shell.run(
-            executable: "/usr/bin/xcrun",
+            executable: path,
             arguments: [
-                "devicectl", "manage", "unpair",
+                "manage", "unpair",
                 "--device", identifier,
                 "--timeout", "20",
                 "--json-output", url.path
@@ -128,8 +164,7 @@ enum DeviceCtl {
         if result.timedOut {
             return (false, output.isEmpty ? "Timed out." : output)
         }
-        if result.status == 0
-            || output.localizedCaseInsensitiveContains("unpair") {
+        if result.status == 0 || outcomeSucceeded(url) {
             return (true, output)
         }
         let idevicepair = "/opt/homebrew/bin/idevicepair"
@@ -145,6 +180,16 @@ enum DeviceCtl {
         let ok = fallback.status == 0
             || fallbackOut.localizedCaseInsensitiveContains("success")
         return (ok, fallbackOut.isEmpty ? output : fallbackOut)
+    }
+
+    /// The JSON echoes the command's own arguments, so match the outcome
+    /// field rather than searching the text for "unpair".
+    private static func outcomeSucceeded(_ url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let info = root["info"] as? [String: Any]
+        else { return false }
+        return (info["outcome"] as? String) == "success"
     }
 
     private static func parse(_ raw: [String: Any]) -> IOSDevice? {

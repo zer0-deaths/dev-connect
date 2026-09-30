@@ -92,8 +92,13 @@ enum Shell {
         if group.wait(timeout: .now() + timeout) == .timedOut {
             timedOut = true
             proc.terminate()
-            _ = group.wait(timeout: .now() + 1)
+            if group.wait(timeout: .now() + 1) == .timedOut {
+                kill(proc.processIdentifier, SIGKILL)
+                _ = group.wait(timeout: .now() + 1)
+            }
         }
+        // terminationStatus raises on a process that is still running.
+        guard !proc.isRunning else { return (-1, "Timed out.", true) }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         var output = String(data: data, encoding: .utf8) ?? ""
         if timedOut, output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
