@@ -86,6 +86,9 @@ enum DeviceCtl {
            let text = String(data: data, encoding: .utf8) {
             output = output.isEmpty ? text : output + "\n" + text
         }
+        if result.timedOut {
+            return (false, output.isEmpty ? "Timed out." : output)
+        }
         if result.status == 0
             || output.localizedCaseInsensitiveContains("\"pairingState\" : \"paired\"") {
             return (true, output)
@@ -121,6 +124,9 @@ enum DeviceCtl {
         if let data = try? Data(contentsOf: url),
            let text = String(data: data, encoding: .utf8) {
             output = output.isEmpty ? text : output + "\n" + text
+        }
+        if result.timedOut {
+            return (false, output.isEmpty ? "Timed out." : output)
         }
         if result.status == 0
             || output.localizedCaseInsensitiveContains("unpair") {

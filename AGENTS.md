@@ -124,9 +124,11 @@ package pins; `droppykit update` moves both to the newest release. A build that 
 - **Look like Droppy, not like a guest.** Surfaces are dark. Foreground colours come from
   `AdaptiveColors`, spacing from `DroppySpacing`, radii from `DroppyRadius` with
   `style: .continuous`. No borders or outlines, no gradients, no ALL-CAPS labels, sentence
-  case everywhere, and never paint your own background on a widget. Settings panes are built
-  from `DropletSettingsCard`, `DropletControlRow`, `DropletToggleRow`, `DropletStackedRow`
-  and `DropletSliderRow`.
+  case everywhere, and never paint your own background on a widget. Settings panes are rooted
+  in `DropletSettingsPane` (`minAPI` 1.9.0) and built from `DropletSettingsCard`,
+  `DropletSettingsSection`, `DropletControlRow`, `DropletToggleRow`, `DropletStackedRow` and
+  `DropletSliderRow`; the host mounts the pane in its native grouped form, so the pane's
+  content is a list of sections, never a `VStack`, and it places no dividers.
 - **`droplet.json` is the truth for the build.** `Info.plist` is generated from it.
   `version` is numeric `major.minor.patch`; `summary` is at most 60 characters;
   `minAppVersion` stays `15.3.0` unless the droplet needs something newer; `kit.minAPI` is

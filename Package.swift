@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "DevConnect", type: .dynamic, targets: ["DevConnect"])
     ],
     dependencies: [
-        .package(url: "https://gitlab.com/droppyformac1/droppykit.git", from: "1.6.0")
+        .package(url: "https://gitlab.com/droppyformac1/droppykit.git", from: "1.9.0")
     ],
     targets: [
         .target(

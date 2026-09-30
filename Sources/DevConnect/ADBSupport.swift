@@ -57,8 +57,8 @@ enum QRCodeImage {
 enum ADBPath {
     static func detect(override: String?) -> String? {
         let trimmed = override?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmed.isEmpty, FileManager.default.isExecutableFile(atPath: trimmed) {
-            return trimmed
+        if !trimmed.isEmpty {
+            return FileManager.default.isExecutableFile(atPath: trimmed) ? trimmed : nil
         }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
@@ -73,7 +73,7 @@ enum ADBPath {
 }
 
 enum Shell {
-    static func run(executable: String, arguments: [String], timeout: TimeInterval) -> (status: Int32, output: String) {
+    static func run(executable: String, arguments: [String], timeout: TimeInterval) -> (status: Int32, output: String, timedOut: Bool) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: executable)
         proc.arguments = arguments
@@ -83,18 +83,23 @@ enum Shell {
         do {
             try proc.run()
         } catch {
-            return (-1, error.localizedDescription)
+            return (-1, error.localizedDescription, false)
         }
         let group = DispatchGroup()
         group.enter()
         proc.terminationHandler = { _ in group.leave() }
+        var timedOut = false
         if group.wait(timeout: .now() + timeout) == .timedOut {
+            timedOut = true
             proc.terminate()
             _ = group.wait(timeout: .now() + 1)
         }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        return (proc.terminationStatus, output)
+        var output = String(data: data, encoding: .utf8) ?? ""
+        if timedOut, output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            output = "Timed out."
+        }
+        return (proc.terminationStatus, output, timedOut)
     }
 
     static func ipv4(for hostname: String) -> String? {
@@ -189,6 +194,9 @@ enum ADB {
             timeout: 20
         )
         let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result.timedOut {
+            return (false, output.isEmpty ? "Timed out." : output)
+        }
         return (output.localizedCaseInsensitiveContains("successfully paired"), output)
     }
 
@@ -199,6 +207,9 @@ enum ADB {
             timeout: 12
         )
         let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result.timedOut {
+            return (false, output.isEmpty ? "Timed out." : output)
+        }
         let ok = output.localizedCaseInsensitiveContains("connected to")
             || output.localizedCaseInsensitiveContains("already connected")
         return (ok, output)
