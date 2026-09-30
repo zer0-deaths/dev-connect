@@ -303,6 +303,8 @@ final class DNSBrowse {
     private var process: Process?
     private var handle: FileHandle?
 
+    var isRunning: Bool { process?.isRunning == true }
+
     func start(type: String, onAdd: @escaping (String) -> Void) {
         stop()
         let proc = Process()
@@ -318,8 +320,7 @@ final class DNSBrowse {
             for raw in text.split(separator: "\n") {
                 let line = String(raw)
                 guard line.contains("Add"), line.contains(type) else { continue }
-                guard let name = line.split(whereSeparator: { $0.isWhitespace }).last.map(String.init) else { continue }
-                if name.isEmpty || name == "Name" || name == "local." { continue }
+                guard let name = Self.instanceName(from: line, type: type) else { continue }
                 DispatchQueue.main.async { onAdd(name) }
             }
         }
@@ -331,6 +332,26 @@ final class DNSBrowse {
             handle = nil
             process = nil
         }
+    }
+
+    /// dns-sd prints `type.` then the instance, sometimes with ` (2)` for a
+    /// second interface. Last-whitespace-token would keep `(2)` and drop the name.
+    private static func instanceName(from line: String, type: String) -> String? {
+        var name: String
+        if let range = line.range(of: type) {
+            name = String(line[range.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.hasPrefix(".") {
+                name = String(name.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        } else {
+            name = line.split(whereSeparator: { $0.isWhitespace }).last.map(String.init) ?? ""
+        }
+        if let paren = name.range(of: " (") {
+            name = String(name[..<paren.lowerBound])
+        }
+        if name.isEmpty || name == "Name" || name == "local." { return nil }
+        return name
     }
 
     func stop() {

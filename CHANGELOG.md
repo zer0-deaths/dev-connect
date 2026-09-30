@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.4] - 2026-09-30
+
+- Poll while the shelf is open or an add/pair flow is up, even if the host leaves activeWidgetIDs empty.
+- Discover phones with dns-sd as well as `adb mdns services`, which is often empty, and show already-paired connect targets in the code scan.
+
 ## [1.2.3] - 2026-09-30
 
 - Poll devices only while the widget is on a shelf: every 2 seconds with the shelf open, every 30 seconds with it closed, and not at all when the widget is not placed. Opening the shelf refreshes at once.

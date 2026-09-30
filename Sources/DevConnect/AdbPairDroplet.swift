@@ -30,7 +30,9 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
     private var disconnectTask: Task<Void, Never>?
     private var startServerTask: Task<Void, Never>?
     private var pairPoll: AnyCancellable?
+    private var browseTasks: [Task<Void, Never>] = []
     private var seenPairing: Set<String> = []
+    private var seenConnect: Set<String> = []
     private var expectedConnectIP: String?
 
     @Published var devices: [ADBDevice] = []
@@ -92,17 +94,22 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         host.log.info("Dev Connect activated adb=\(resolvedADBPath.isEmpty ? "missing" : resolvedADBPath) devicectl=\(deviceCtlPath ?? "missing")")
     }
 
-    /// No poll while the widget is not on a shelf layout, a slow one while the
-    /// shelf is closed, and the fast one only while the shelf is open.
+    /// Fast while the shelf is open or an add/pair flow is up. Slow while the
+    /// widget is placed and the shelf is closed. Playground often leaves
+    /// `activeWidgetIDs` empty, so an open shelf still polls.
     private var desiredPollInterval: TimeInterval? {
         guard let host else { return nil }
         let state = host.installState.state
-        guard state.isEnabled, state.activeWidgetIDs.contains("dev-connect") else { return nil }
-        return host.shelf.isExpanded ? 2 : 30
+        guard state.isEnabled else { return nil }
+        if addFlow != .idle || isPairing { return 2 }
+        if host.shelf.isExpanded { return 2 }
+        guard state.activeWidgetIDs.contains("dev-connect") else { return nil }
+        return 30
     }
 
     private func retunePoll() {
         let interval = desiredPollInterval
+        syncDiscoveryBrowsing()
         guard interval != pollInterval else { return }
         let previous = pollInterval
         pollInterval = interval
@@ -171,6 +178,9 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         pollTimer = nil
         pollInterval = nil
         visibilityObservers.removeAll()
+        browseTasks.forEach { $0.cancel() }
+        browseTasks.removeAll()
+        seenConnect.removeAll()
         pairingBrowse.stop()
         connectBrowse.stop()
     }
@@ -341,6 +351,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         addFlow = platform == .ios ? .iosHelp : .pickAndroid
         _ = host?.shelf.open(revealing: "dev-connect")
         _ = host?.shelf.setHoldsOpen(true)
+        retunePoll()
         refreshWidgetLayout()
     }
 
@@ -361,6 +372,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         host?.log.info("pairing \(mode.rawValue)")
         _ = host?.shelf.open(revealing: "dev-connect")
         _ = host?.shelf.setHoldsOpen(true)
+        retunePoll()
         refreshWidgetLayout()
         presentHUD(text: mode == .qr ? "Scan QR" : "Enter code", detail: "Dev Connect")
     }
@@ -476,6 +488,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         addFlow = .idle
         resetMeasuredHeight()
         _ = host?.shelf.setHoldsOpen(false)
+        retunePoll()
         refreshWidgetLayout()
     }
 
@@ -541,12 +554,8 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         stopWaiting()
         seenPairing.removeAll()
         expectedConnectIP = nil
-        let generation = activationGeneration
-        pairingBrowse.start(type: "_adb-tls-pairing._tcp") { [weak self] name in
-            guard let self, self.isCurrent(generation) else { return }
-            self.handlePairingInstance(name)
-        }
         startPairPoll()
+        syncDiscoveryBrowsing()
     }
 
     private func startCodeWait() {
@@ -555,12 +564,48 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         if selectedTargetID == nil {
             selectedTargetID = pairingTargets.first?.id
         }
-        let generation = activationGeneration
-        pairingBrowse.start(type: "_adb-tls-pairing._tcp") { [weak self] name in
-            guard let self, self.isCurrent(generation) else { return }
-            self.handlePairingInstance(name)
-        }
         startPairPoll()
+        syncDiscoveryBrowsing()
+    }
+
+    private func syncDiscoveryBrowsing() {
+        guard host != nil, desiredPollInterval != nil || isPairingOpen else {
+            pairingBrowse.stop()
+            if expectedConnectIP == nil { connectBrowse.stop() }
+            return
+        }
+        let generation = activationGeneration
+        if !pairingBrowse.isRunning {
+            pairingBrowse.start(type: "_adb-tls-pairing._tcp") { [weak self] name in
+                guard let self, self.isCurrent(generation) else { return }
+                self.handlePairingInstance(name)
+            }
+        }
+        if expectedConnectIP == nil, !connectBrowse.isRunning {
+            seenConnect.removeAll()
+            connectBrowse.start(type: "_adb-tls-connect._tcp") { [weak self] name in
+                guard let self, self.isCurrent(generation) else { return }
+                self.handleConnectInstance(name)
+            }
+        }
+    }
+
+    private func handleConnectInstance(_ name: String) {
+        guard seenConnect.insert(name).inserted else { return }
+        let generation = activationGeneration
+        let task = Task { [weak self] in
+            let resolved = await Task.detached { MDNSResolve.connect(instance: name) }.value
+            guard let self, !Task.isCancelled else { return }
+            guard self.isCurrent(generation), let resolved else { return }
+            if !self.connectTargets.contains(resolved) {
+                self.connectTargets.append(resolved)
+                self.refreshWidgetLayout()
+            }
+            if let ip = self.expectedConnectIP, resolved.host == ip {
+                await self.connect(target: resolved, generation: generation)
+            }
+        }
+        browseTasks.append(task)
     }
 
     private func startPairPoll() {
@@ -710,18 +755,10 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         guard isCurrent(generation) else { return }
         refreshADBPath()
         let path = resolvedADBPath
+        seenConnect.removeAll()
         connectBrowse.start(type: "_adb-tls-connect._tcp") { [weak self] name in
             guard let self, self.isCurrent(generation) else { return }
-            self.connectTask?.cancel()
-            self.connectTask = Task { [weak self] in
-                let resolved = await Task.detached { MDNSResolve.connect(instance: name) }.value
-                guard let self, !Task.isCancelled else { return }
-                self.clearTask(&self.connectTask, generation: generation)
-                guard self.isCurrent(generation), let resolved else { return }
-                if resolved.host == ip || self.expectedConnectIP == nil {
-                    await self.connect(target: resolved, generation: generation)
-                }
-            }
+            self.handleConnectInstance(name)
         }
         for _ in 0..<20 {
             if Task.isCancelled {
@@ -796,6 +833,7 @@ public final class AdbPairDroplet: NSObject, ObservableObject, Droplet {
         presentHUD(text: "Connected", detail: devices.first(where: { $0.isReady })?.title ?? "Android")
         stopWaiting()
         _ = host?.shelf.setHoldsOpen(false)
+        retunePoll()
         refreshWidgetLayout()
         refreshDevices()
     }
@@ -1154,9 +1192,24 @@ private struct AdbPairWidget: View {
 
     private var widgetCode: some View {
         VStack(alignment: .leading, spacing: DroppySpacing.sm) {
-            if droplet.pairingTargets.isEmpty {
+            if droplet.pairingTargets.isEmpty, droplet.connectTargets.isEmpty {
                 AdbCaption("On the phone, tap Pair device with pairing code.")
                 AdbDeviceChip(title: "Looking for a phone", subtitle: droplet.status)
+            } else if droplet.pairingTargets.isEmpty {
+                AdbCaption("Already paired. Connect, or open Pair device with pairing code.")
+                ForEach(droplet.connectTargets.prefix(4)) { target in
+                    Button {
+                        droplet.connectNearby(target)
+                    } label: {
+                        AdbDeviceChip(
+                            title: target.host,
+                            subtitle: "port \(verbatimPort(target.port))",
+                            selected: false,
+                            chevron: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
                 AdbCaption("Enter the 6-digit code from the phone.")
                 ForEach(droplet.pairingTargets.prefix(4)) { target in
